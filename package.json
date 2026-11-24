@@ -1,0 +1,17 @@
+{
+  "private": true,
+  "scripts": {
+    "build:frontend": "node scripts/build-frontend.mjs",
+    "test:frontend": "node --test tests/frontend.test.mjs"
+  },
+  "dependencies": {
+    "dompurify": "3.5.0",
+    "katex": "0.19.1",
+    "markdown-it": "14.3.3",
+    "markdown-it-texmath": "1.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "jsdom": "31.0.1"
+  }
+}

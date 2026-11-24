@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f6f5">
+  <title>Agent 工作台</title>
+  <link rel="stylesheet" href="/assets/vendor/katex.min.css">
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/vendor/markdown.js" defer></script>
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="会话导航">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div><strong>Agent 工作台</strong><span>本地工作空间</span></div>
+        <button class="icon-button close-sidebar" id="close-sidebar" type="button" aria-label="关闭会话列表">×</button>
+      </div>
+      <button class="new-chat" id="new-session" type="button"><span aria-hidden="true">＋</span> 新建会话</button>
+      <div class="sidebar-heading"><h2>最近会话</h2><button class="text-button" id="refresh-sessions" type="button" aria-label="刷新会话列表">刷新</button></div>
+      <div class="session-list" id="session-list" aria-live="polite"><p class="side-empty">正在加载会话…</p></div>
+      <div class="sidebar-footer">
+        <span class="connection-dot" id="connection-dot"></span>
+        <span id="connection-status">正在连接 API</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="sheet">
+        <section class="conversation" aria-labelledby="conversation-title">
+          <div class="conversation-header" id="conversation-header">
+            <button class="panel-toggle menu-button" id="open-sidebar" type="button" aria-label="收起会话列表" aria-controls="sidebar" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg><span id="sidebar-toggle-label">收起会话</span></button>
+            <div class="conversation-heading">
+              <div class="title-row"><h1 id="conversation-title">新会话</h1><span class="mode-label" id="current-mode-label">通用问答</span><span class="local-label">本地运行</span></div>
+              <p id="conversation-subtitle">开始对话，Agent 会保留上下文并在需要时调用工具。</p>
+            </div>
+            <button type="button" class="details-toggle secondary-button" id="toggle-details" aria-controls="details" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM15 5v14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="details-toggle-label">收起详情</span></button>
+          </div>
+          <div id="mode-picker" class="mode-picker" role="group" aria-label="选择会话模式">
+            <button type="button" class="mode-option active" data-mode="chat" aria-pressed="true">通用问答</button>
+            <button type="button" class="mode-option" data-mode="contract" aria-pressed="false">合同审查</button>
+            <span>会话创建后不能切换模式</span>
+          </div>
+          <div id="notice" class="notice" role="alert" hidden></div>
+          <div class="reading-controls">
+            <div class="reading-bar" id="reading-bar" hidden>
+              <div class="reading-summary"><strong>对话记录</strong><span id="turn-count"></span></div>
+              <div class="reading-actions">
+                <button type="button" class="reading-button" id="toggle-navigation" aria-expanded="false" aria-controls="navigation-panel">查找与定位</button>
+                <button type="button" class="reading-button" id="collapse-all">折叠全部</button>
+                <button type="button" class="reading-button" id="latest-message">最新消息 ↓</button>
+              </div>
+            </div>
+            <div class="navigation-panel" id="navigation-panel" hidden>
+              <label for="message-search">查找本会话</label>
+              <input id="message-search" type="search" placeholder="搜索消息、回答或工具内容">
+              <div class="navigation-caption" id="navigation-caption"></div>
+              <div id="navigation-results" class="navigation-results"></div>
+            </div>
+          </div>
+          <div id="messages" class="messages" aria-live="polite"></div>
+          <form id="composer" class="composer">
+            <div class="panel-dock" id="panel-dock" hidden></div>
+            <label for="message" class="visually-hidden">输入消息</label>
+            <textarea id="message" rows="1" maxlength="100000" placeholder="输入消息" title="Enter 发送，Shift + Enter 换行"></textarea>
+            <button class="send-button" id="send" type="submit">发送 <span aria-hidden="true">↑</span></button>
+          </form>
+          <p class="composer-note">内容将发送至已配置的模型服务。回答由模型生成，请核实重要信息。合同审查不构成法律意见。<span class="shortcut-hint"> Enter 发送，Shift + Enter 换行。</span></p>
+        </section>
+
+        <aside class="details" id="details" aria-label="会话执行详情">
+          <div class="details-head"><h2>执行详情</h2><button class="icon-button details-close" id="close-details" type="button" aria-label="关闭执行详情">×</button></div>
+          <section class="detail-block">
+            <div class="detail-heading"><h3>会话记忆</h3><span id="memory-count">—</span></div>
+            <p class="detail-description" id="memory-description">选择会话后查看记忆。</p>
+            <div id="memory-preview" class="memory-content memory-preview" hidden></div>
+            <div id="memory-content" class="memory-content">暂无摘要</div>
+            <button type="button" id="toggle-memory" class="memory-toggle" aria-controls="memory-content" aria-expanded="false" hidden>展开记忆</button>
+          </section>
+          <section class="detail-block">
+            <div class="detail-heading"><h3>任务队列</h3><span id="task-count">0</span></div>
+            <div id="task-list" class="task-list"><p class="detail-empty">还没有任务</p></div>
+          </section>
+          <section class="detail-block">
+            <div class="detail-heading"><h3>工具调用</h3><span id="tool-count">0</span></div>
+            <div id="tool-list" class="tool-list"><p class="detail-empty">工具调用会在执行时显示</p></div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
