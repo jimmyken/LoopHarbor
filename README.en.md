@@ -17,6 +17,10 @@ The agent uses an OpenAI-compatible Chat Completions API with tool calling for m
 
 The current web interface, system prompts, error messages, and memory summaries are in Chinese; these translations cover documentation only.
 
+## GitHub Pages promotional site
+
+A repository administrator must first select **GitHub Actions** under **Settings → Pages → Build and deployment → Source**. Otherwise, the deployment workflow can fail at `configure-pages` with `Not Found` because the Pages site does not exist. After configuring Pages, rerun the failed **Deploy GitHub Pages** workflow in Actions or run it manually. Subsequent pushes to `main` automatically deploy `site/`.
+
 ## 1. Requirements
 
 - Python 3.12 (dependency installation has been verified; the pinned psycopg binary package does not support Python 3.14)

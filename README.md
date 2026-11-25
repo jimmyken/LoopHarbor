@@ -15,6 +15,10 @@
 
 Agent 使用支持工具调用的 OpenAI 兼容 Chat Completions 接口进行多轮问答或合同审查。模型可以调用四则计算和 Worker 本地日期时间工具，再继续生成回答。合同审查结果仅供参考，不构成法律意见。
 
+## GitHub Pages 宣传网站
+
+仓库管理员需先在 **Settings → Pages → Build and deployment → Source** 中选择 **GitHub Actions**。否则部署工作流在 `configure-pages` 步骤中可能因 Pages 站点不存在而报 `Not Found`。设置完成后，在 Actions 中重新运行失败的 **Deploy GitHub Pages** 工作流，或手动运行该工作流。之后推送到 `main` 会自动部署 `site/`。
+
 ## 1. 环境要求
 
 - Python 3.12（已验证依赖安装；当前锁定的 psycopg 二进制包不支持 Python 3.14）
