@@ -225,3 +225,11 @@ curl -fsS "http://localhost:8000/tasks/$TASK2/celery"
 Checkpoint 保存的是 LangGraph 已持久化的工作流状态，不是 Python 函数执行现场。若某个节点在产生新检查点之前崩溃，恢复时可能重新执行该节点。节点中的外部副作用必须自行实现幂等。
 
 本 Demo 的图节点是同步执行的；Celery Worker 负责后台运行整个图。要实现细粒度恢复，需要将业务操作拆成合适的 LangGraph 节点，并确保节点输出和外部操作具备可恢复、可幂等的语义。
+
+## 10. 支持项目
+
+如果这个项目对你有帮助，欢迎自愿扫码支持项目的持续开发与维护。感谢你的支持！
+
+| 支付宝 | 微信支付 |
+|---|---|
+| <img src="images/alipay.jpg" alt="支付宝收款二维码" width="220"> | <img src="images/weixinpay.jpg" alt="微信支付收款二维码" width="220"> |
