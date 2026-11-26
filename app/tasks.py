@@ -16,6 +16,7 @@ from app.agent import build_graph
 def run_contract_agent(
     self, task_id: str, thread_id: str, contract_text: str,
     mode: Literal["chat", "contract"] = "contract",
+    auto_split: bool = False,
 ):
     with lock_session(thread_id):
         task = get_task(task_id)
@@ -27,10 +28,10 @@ def run_contract_agent(
             raise RuntimeError("业务任务已结束，不能重复执行")
         if has_pending_predecessor(task_id):
             raise self.retry(countdown=2)
-        return execute_turn(task_id, thread_id, contract_text, mode)
+        return execute_turn(task_id, thread_id, contract_text, mode, auto_split)
 
 
-def execute_turn(task_id: str, thread_id: str, contract_text: str, mode: str):
+def execute_turn(task_id: str, thread_id: str, contract_text: str, mode: str, auto_split: bool = False):
     try:
         update_task(
             task_id, status="RUNNING", progress=5,
@@ -57,7 +58,7 @@ def execute_turn(task_id: str, thread_id: str, contract_text: str, mode: str):
                 result = previous
             else:
                 result = graph.invoke(
-                    {"message": contract_text, "mode": mode, "task_id": task_id},
+                    {"message": contract_text, "mode": mode, "task_id": task_id, "auto_split": auto_split},
                     config=config,
                 )
 

@@ -1,4 +1,5 @@
 import json
+import threading
 import unittest
 from copy import deepcopy
 from unittest.mock import patch
@@ -9,7 +10,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from pydantic import ValidationError
 
-from app.agent import build_graph, execute_tool, model_loop, run_agent
+from app.agent import build_graph, execute_tool, model_loop, run_agent, run_decomposition
 from app.main import SubmitRequest, api
 from app.tasks import execute_turn
 
@@ -124,9 +125,117 @@ class AgentGraphTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 202)
         task_id = response.json()["task_id"]
-        self.assertEqual(enqueue.call_args.kwargs["args"][2:], ["验收后付款", "contract"])
+        self.assertEqual(enqueue.call_args.kwargs["args"][2:], ["验收后付款", "contract", False])
         self.assertEqual(enqueue.call_args.kwargs["task_id"], task_id)
         self.assertEqual(create_task.call_args.args[2], "验收后付款")
+
+    @patch("app.main.create_task")
+    @patch("app.main.run_contract_agent.apply_async")
+    def test_api_enqueues_opt_in_setting(self, enqueue, create_task):
+        response = TestClient(api).post(
+            "/tasks", json={"mode": "chat", "message": "分析", "auto_split": True}
+        )
+        self.assertEqual(response.status_code, 202)
+        self.assertTrue(enqueue.call_args.kwargs["args"][-1])
+
+    def test_decomposition_runs_subtasks_in_parallel_then_summarizes(self):
+        barrier = threading.Barrier(2)
+        calls = []
+
+        def fake_loop(messages, *, task_id=""):
+            calls.append(deepcopy(messages))
+            if messages[0]["content"].startswith("你是子任务助手"):
+                payload = json.loads(messages[-1]["content"])
+                barrier.wait(timeout=5)
+                return "结果：" + payload["subtask"]
+            return "汇总结果"
+
+        graph = build_graph(InMemorySaver())
+        config = {"configurable": {"thread_id": "split"}}
+        with patch("app.agent.call_model", return_value={"content": '{"subtasks":["分析甲","分析乙"]}'}), \
+             patch("app.agent.model_loop", side_effect=fake_loop):
+            result = graph.invoke(
+                {"mode": "chat", "message": "综合分析", "task_id": "split-1", "auto_split": True}, config
+            )
+        self.assertEqual(result["answer"], "汇总结果")
+        self.assertEqual(len(calls), 3)
+        self.assertIn("结果：分析甲", calls[-1][-1]["content"])
+        self.assertIn("结果：分析乙", calls[-1][-1]["content"])
+        self.assertEqual(result["history"], [
+            {"role": "user", "content": "综合分析"},
+            {"role": "assistant", "content": "汇总结果"},
+        ])
+
+    def test_decomposition_simple_request_uses_original_conversation(self):
+        messages = [{"role": "system", "content": "规则"}, {"role": "user", "content": "你好"}]
+        with patch("app.agent.call_model", return_value={"content": '{"subtasks":[]}'}), \
+             patch("app.agent.model_loop", return_value="你好") as loop:
+            self.assertEqual(run_decomposition(messages, task_id="t"), "你好")
+        loop.assert_called_once_with(messages, task_id="t")
+
+    def test_decomposition_rejects_invalid_plans(self):
+        messages = [{"role": "system", "content": "规则"}, {"role": "user", "content": "问题"}]
+        for content in (
+            'not json', '{"subtasks":["单个"]}', '{"subtasks":["a", ""]}', '{"subtasks":[1,2]}',
+            json.dumps({"subtasks": ["a"] * 5}), json.dumps({"subtasks": ["a" * 2001, "b"]}),
+        ):
+            with self.subTest(content=content), \
+                 patch("app.agent.call_model", return_value={"content": content}), \
+                 patch("app.agent.model_loop") as loop:
+                with self.assertRaisesRegex(RuntimeError, "任务拆分"):
+                    run_decomposition(messages)
+                loop.assert_not_called()
+
+    def test_subtask_failure_prevents_synthesis_and_preserves_history(self):
+        graph = build_graph(InMemorySaver())
+        config = {"configurable": {"thread_id": "split-failure"}}
+        with patch("app.agent.model_loop", return_value="旧回答"):
+            graph.invoke({"mode": "chat", "message": "旧消息", "task_id": "old"}, config)
+
+        def fail_subtask(messages, *, task_id=""):
+            payload = json.loads(messages[-1]["content"])
+            if payload["subtask"] == "失败":
+                raise RuntimeError("子任务失败")
+            return "完成"
+
+        with patch("app.agent.call_model", return_value={"content": '{"subtasks":["成功","失败"]}'}), \
+             patch("app.agent.model_loop", side_effect=fail_subtask) as loop:
+            with self.assertRaisesRegex(RuntimeError, "子任务失败"):
+                graph.invoke({"mode": "chat", "message": "新消息", "task_id": "new", "auto_split": True}, config)
+        self.assertEqual(loop.call_count, 2)
+        self.assertEqual(graph.get_state(config).values["history"][0]["content"], "旧消息")
+        self.assertEqual(len(graph.get_state(config).values["history"]), 2)
+
+    def test_contract_decomposition_preserves_output_format(self):
+        review = '{"risks":["风险"],"report":"报告"}'
+        with patch("app.agent.call_model", return_value={"content": '{"subtasks":["甲","乙"]}'}), \
+             patch("app.agent.model_loop", side_effect=lambda messages, **kwargs: (
+                 "子任务结果" if messages[0]["content"].startswith("你是子任务助手") else review
+             )):
+            result = run_agent({"mode": "contract", "message": "合同", "auto_split": True})
+        self.assertEqual(result["risks"], ["风险"])
+        self.assertEqual(result["report"], "报告")
+
+    @patch("app.tasks.update_task")
+    @patch("app.tasks.PostgresSaver.from_conn_string")
+    def test_worker_applies_opt_in_per_turn(self, saver, update):
+        saver.return_value.__enter__.return_value = TestSaver()
+        with patch("app.agent.call_model", return_value={"content": '{"subtasks":[]}'}) as planner, \
+             patch("app.agent.model_loop", side_effect=["第一轮", "第二轮"]):
+            first = execute_turn("one", "thread", "复杂请求", "chat", True)
+            second = execute_turn("two", "thread", "后续问题", "chat")
+        self.assertEqual(first["answer"], "第一轮")
+        self.assertEqual(second["answer"], "第二轮")
+        self.assertEqual(planner.call_count, 1)
+
+    @patch("app.tasks.update_task")
+    @patch("app.tasks.PostgresSaver.from_conn_string")
+    def test_worker_marks_invalid_plan_as_failure(self, saver, update):
+        saver.return_value.__enter__.return_value = TestSaver()
+        with patch("app.agent.call_model", return_value={"content": "无效计划"}):
+            with self.assertRaisesRegex(RuntimeError, "任务拆分"):
+                execute_turn("one", "thread", "复杂请求", "chat", True)
+        self.assertEqual(update.call_args.kwargs["status"], "FAILURE")
 
     @patch("app.tasks.update_task")
     @patch("app.tasks.PostgresSaver.from_conn_string")

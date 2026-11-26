@@ -37,6 +37,29 @@ async function workspace() {
   return { dom, window, session };
 }
 
+test("task decomposition is opt-in and sent with each request", async (t) => {
+  const { dom, window } = await workspace();
+  t.after(() => dom.window.close());
+  const doc = window.document;
+  const toggle = doc.querySelector("#auto-split");
+  assert.equal(toggle.checked, false);
+  toggle.checked = true;
+  let submitted;
+  const originalFetch = window.fetch;
+  window.fetch = async (path, options) => {
+    if (path === "/tasks") {
+      submitted = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ thread_id: "test" }) };
+    }
+    return originalFetch(path, options);
+  };
+  doc.querySelector("#message").value = "复杂问题";
+  doc.querySelector("#composer").dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(submitted.auto_split, true);
+  assert.equal(submitted.thread_id, "test");
+});
+
 test("renders Markdown and formulas without executing HTML or unsafe links", async (t) => {
   const { dom, window } = await workspace();
   t.after(() => dom.window.close());
@@ -90,23 +113,37 @@ test("message actions appear below each message and copy or collapse it", async 
   assert.equal(copy.parentElement.querySelector('[role="status"]').textContent, "");
 });
 
-test("search locates collapsed messages and tool output; collapse state survives refresh", async (t) => {
+test("tool output stays in details and search locates it or collapsed messages", async (t) => {
   const { dom, window, session } = await workspace();
   t.after(() => dom.window.close());
   const doc = window.document;
+  assert.equal(doc.querySelector("#messages .tool-event, #messages .message-tool"), null);
+  assert.match(doc.querySelector("#tool-list .tool-event").textContent, /"result":5/);
   doc.querySelector(".message-agent .message-action[aria-expanded]").click();
   assert.equal(doc.querySelector(".message-agent .message-body").hidden, true);
   assert.equal(doc.querySelector(".message-agent .message-preview").textContent, "计算结果…");
   doc.querySelector("#toggle-navigation").click();
   const input = doc.querySelector("#message-search");
+  window.innerWidth = 1440;
+  window.dispatchEvent(new window.Event("resize"));
+  doc.querySelector("#toggle-details").click();
+  assert.equal(doc.querySelector(".sheet").classList.contains("details-collapsed"), true);
   input.value = '"result":5';
   input.dispatchEvent(new window.Event("input"));
   assert.match(doc.querySelector("#navigation-caption").textContent, /1 条/);
   doc.querySelector(".navigation-result").click();
   assert.equal(doc.querySelector("#navigation-panel").hidden, true);
+  assert.equal(doc.querySelector(".message-agent .message-body").hidden, true);
+  assert.equal(doc.querySelector(".sheet").classList.contains("details-collapsed"), false);
+  assert.equal(doc.querySelector("#tool-list .tool-event").open, true);
+  assert.equal(doc.querySelector("#tool-list mark.search-hit").textContent, '"result":5');
+  doc.querySelector("#toggle-navigation").click();
+  input.value = "计算结果";
+  input.dispatchEvent(new window.Event("input"));
+  doc.querySelector(".navigation-result").click();
   assert.equal(doc.querySelector(".message-agent .message-body").hidden, false);
-  assert.equal(doc.querySelector(".message-tool").open, true);
-  assert.equal(doc.querySelector("mark.search-hit").textContent, '"result":5');
+  assert.equal(doc.querySelector("#messages mark.search-hit").textContent, "计算结果");
+  assert.equal(doc.querySelector("#tool-list mark.search-hit"), null);
   doc.querySelector("#collapse-all").click();
   assert.equal(doc.querySelectorAll(".message-body[hidden]").length, 2);
   assert.equal(doc.querySelectorAll(".message-preview:not([hidden])").length, 2);
@@ -117,6 +154,21 @@ test("search locates collapsed messages and tool output; collapse state survives
   doc.querySelector("#collapse-all").click();
   assert.equal(doc.querySelectorAll(".message-body[hidden]").length, 0);
   assert.equal(doc.querySelectorAll(".message-preview:not([hidden])").length, 0);
+});
+
+test("tool search opens details on narrow screens", async (t) => {
+  const { dom, window } = await workspace();
+  t.after(() => dom.window.close());
+  const doc = window.document;
+  window.innerWidth = 390;
+  window.dispatchEvent(new window.Event("resize"));
+  doc.querySelector("#toggle-navigation").click();
+  const input = doc.querySelector("#message-search");
+  input.value = '"result":5';
+  input.dispatchEvent(new window.Event("input"));
+  doc.querySelector(".navigation-result").click();
+  assert.equal(doc.querySelector("#details").classList.contains("open"), true);
+  assert.equal(doc.querySelector("#tool-list .tool-event").open, true);
 });
 
 test("memory preview expands and preserves its state on refresh", async (t) => {

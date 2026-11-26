@@ -27,6 +27,7 @@ api.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
 class SubmitRequest(BaseModel):
     mode: Literal["chat", "contract"]
+    auto_split: bool = False
     thread_id: str | None = Field(default=None, min_length=1, max_length=128)
     message: str = Field(
         min_length=1,
@@ -84,7 +85,7 @@ def submit_task(req: SubmitRequest):
         raise HTTPException(status_code=409, detail="会话模式不可更改") from None
     try:
         run_contract_agent.apply_async(
-            args=[task_id, thread_id, req.message, req.mode],
+            args=[task_id, thread_id, req.message, req.mode, req.auto_split],
             task_id=task_id,
         )
     except Exception as exc:

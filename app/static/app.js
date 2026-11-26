@@ -12,7 +12,6 @@ const state = {
   renderedSession: "",
   renderedSessions: "",
   collapsed: new Set(),
-  openTools: new Set(),
   memoryExpanded: false,
 };
 
@@ -228,7 +227,7 @@ function updateCollapseLabel() {
   $("collapse-all").textContent = allCollapsed ? "展开全部" : "折叠全部";
 }
 
-function renderMessages(tasks, events) {
+function renderMessages(tasks) {
   const list = $("messages");
   const shouldScroll = list.scrollHeight - list.scrollTop - list.clientHeight < 100;
   const oldScroll = list.scrollTop;
@@ -263,19 +262,6 @@ function renderMessages(tasks, events) {
     feedback.append(node("span", `status-dot ${statusClass(task.status)}`), node("span", "", statuses[task.status] || task.status));
     if (Number.isFinite(task.progress)) feedback.append(node("span", "", `${task.progress}%`));
     response.body.prepend(feedback);
-    const taskEvents = events.filter((event) => event.task_id === task.task_id);
-    for (const event of taskEvents) {
-      const detail = node("details", "message-tool");
-      const key = String(event.id);
-      detail.open = state.openTools.has(key);
-      detail.addEventListener("toggle", () => {
-        if (detail.open) state.openTools.add(key);
-        else state.openTools.delete(key);
-      });
-      detail.append(node("summary", "", `工具调用 · ${event.name} · ${shortTime(event.created_at)}`));
-      detail.append(node("pre", "", `输入：${event.arguments}\n输出：${event.output}`));
-      response.body.append(detail);
-    }
     list.append(response.block);
   }
   updateCollapseLabel();
@@ -311,20 +297,33 @@ function renderNavigation() {
       }
     }
   }
-  $("navigation-caption").textContent = query ? `找到 ${count} 条消息` : "按轮次与标题跳转";
-  if (!count) results.append(node("p", "detail-empty", "没有匹配的消息"));
+  if (query) {
+    for (const event of state.session?.tool_events || []) {
+      const text = `${event.name} 输入：${event.arguments} 输出：${event.output}`;
+      const index = text.toLocaleLowerCase().indexOf(query);
+      if (index < 0) continue;
+      const task = state.session.tasks.find((item) => item.task_id === event.task_id);
+      const button = node("button", "navigation-result");
+      button.type = "button";
+      button.append(
+        node("strong", "", `工具调用 · 第 ${task?.sequence_no || "—"} 轮`),
+        node("span", "", text.slice(Math.max(0, index - 25), index + query.length + 45)),
+      );
+      button.addEventListener("click", () => jumpToTool(event.id, query));
+      results.append(button);
+      count++;
+    }
+  }
+  $("navigation-caption").textContent = query ? `找到 ${count} 条结果` : "按轮次与标题跳转";
+  if (!count) results.append(node("p", "detail-empty", "没有匹配的结果"));
 }
 
-function jumpToCard(card, query, target = card) {
-  const key = card.dataset.messageKey;
-  if (state.collapsed.has(key)) {
-    card.querySelector(".message-action[aria-expanded]").click();
-  }
-  for (const mark of $("messages").querySelectorAll("mark.search-hit")) {
+function highlightMatch(root, query) {
+  for (const mark of document.querySelectorAll("mark.search-hit")) {
     mark.replaceWith(document.createTextNode(mark.textContent));
   }
   if (query) {
-    const walker = document.createTreeWalker(card.querySelector(".message-body"), NodeFilter.SHOW_TEXT, {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode: (text) => text.parentElement.closest(".katex-mathml") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
     });
     let text;
@@ -335,15 +334,39 @@ function jumpToCard(card, query, target = card) {
       match.splitText(query.length);
       const mark = node("mark", "search-hit", match.nodeValue);
       match.replaceWith(mark);
-      const tool = mark.closest("details");
-      if (tool) tool.open = true;
-      target = mark;
-      break;
+      return mark;
     }
   }
+  return null;
+}
+
+function jumpToCard(card, query, target = card) {
+  const key = card.dataset.messageKey;
+  if (state.collapsed.has(key)) {
+    card.querySelector(".message-action[aria-expanded]").click();
+  }
+  target = highlightMatch(card.querySelector(".message-body"), query) || target;
   $("navigation-panel").hidden = true;
   $("toggle-navigation").setAttribute("aria-expanded", "false");
   card.focus({ preventScroll: true });
+  target.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function jumpToTool(id, query) {
+  const detail = [...$("tool-list").querySelectorAll(".tool-event")]
+    .find((item) => item.dataset.id === String(id));
+  if (!detail) {
+    showError("工具调用记录已不可用，请刷新会话。");
+    return;
+  }
+  if (window.innerWidth > 1100) document.querySelector(".sheet").classList.remove("details-collapsed");
+  else $("details").classList.add("open");
+  updatePanelControls();
+  detail.open = true;
+  const target = highlightMatch(detail, query) || detail;
+  $("navigation-panel").hidden = true;
+  $("toggle-navigation").setAttribute("aria-expanded", "false");
+  detail.querySelector("summary").focus({ preventScroll: true });
   target.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
@@ -506,7 +529,7 @@ function renderSession() {
   const sessionContent = JSON.stringify(session);
   if (state.renderedSession !== sessionContent) {
     state.renderedSession = sessionContent;
-    renderMessages(session?.tasks || [], session?.tool_events || []);
+    renderMessages(session?.tasks || []);
     renderDetails(session);
   }
   renderSessions();
@@ -523,7 +546,6 @@ async function selectSession(id) {
   state.threadId = id;
   state.session = null;
   state.collapsed.clear();
-  state.openTools.clear();
   state.memoryExpanded = false;
   $("message-search").value = "";
   localStorage.setItem("agent.activeThread", id);
@@ -572,7 +594,6 @@ function newSession() {
   state.threadId = null;
   state.session = null;
   state.collapsed.clear();
-  state.openTools.clear();
   state.memoryExpanded = false;
   $("message-search").value = "";
   localStorage.removeItem("agent.activeThread");
@@ -593,7 +614,7 @@ async function submitMessage(event) {
   updateComposer();
   const threadId = state.threadId;
   const version = state.selectionVersion;
-  const payload = { mode: state.mode, message };
+  const payload = { mode: state.mode, message, auto_split: $("auto-split").checked };
   if (threadId) payload.thread_id = threadId;
   clearError();
   try {

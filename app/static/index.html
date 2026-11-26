@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f3f6f5">
   <title>Agent 工作台</title>
   <link rel="stylesheet" href="/assets/vendor/katex.min.css">
-  <link rel="stylesheet" href="/assets/style.css">
+  <link rel="stylesheet" href="/assets/style.css?v=20261125-scroll">
   <script src="/assets/vendor/markdown.js" defer></script>
   <script src="/assets/app.js" defer></script>
 </head>
@@ -67,6 +67,7 @@
             <textarea id="message" rows="1" maxlength="100000" placeholder="输入消息" title="Enter 发送，Shift + Enter 换行"></textarea>
             <button class="send-button" id="send" type="submit">发送 <span aria-hidden="true">↑</span></button>
           </form>
+          <label class="split-option"><input id="auto-split" type="checkbox"> 使用任务拆分 Skill <span>复杂任务并行处理后汇总</span></label>
           <p class="composer-note">内容将发送至已配置的模型服务。回答由模型生成，请核实重要信息。合同审查不构成法律意见。<span class="shortcut-hint"> Enter 发送，Shift + Enter 换行。</span></p>
         </section>
 
