@@ -232,4 +232,4 @@ Checkpoint 保存的是 LangGraph 已持久化的工作流状态，不是 Python
 
 | 支付宝 | 微信支付 |
 |---|---|
-| <img src="images/alipay.jpg" alt="支付宝收款二维码" width="220"> | <img src="images/weixinpay.jpg" alt="微信支付收款二维码" width="220"> |
+| <img src="images/alipay.png" alt="支付宝收款二维码" width="220"> | <img src="images/weixinpay.png" alt="微信支付收款二维码" width="220"> |
